@@ -64,13 +64,21 @@ export function CreateWorkflowModal({ isOpen, onClose, onSubmit }: CreateWorkflo
   }, [isOpen, reset]);
 
   const onSubmitHandler = async (data: WorkflowFormData) => {
+    console.log('🚨 MODAL SUBMIT HANDLER CALLED!');
+    console.log('Modal form data:', data);
+    
     setIsSubmitting(true);
     
-  
-    
-    onSubmit(data);
-    handleClose();
-    setIsSubmitting(false);
+    try {
+      console.log('📤 Calling onSubmit prop with data...');
+      onSubmit(data);
+      console.log('✅ onSubmit prop called successfully');
+      handleClose();
+    } catch (error) {
+      console.error('❌ Error in onSubmit:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleClose = () => {

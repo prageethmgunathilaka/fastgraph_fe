@@ -30,6 +30,15 @@ export function WorkflowTabs({
   maxWorkflows
 }: WorkflowTabsProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Debug: Check if button should be visible (can be removed in production)
+  // console.log('🔍 WORKFLOW TABS RENDER:', {
+  //   workflowsCount: workflows.length,
+  //   maxWorkflows: maxWorkflows,
+  //   shouldShowButton: workflows.length < maxWorkflows,
+  //   onCreateWithModal: !!onCreateWithModal,
+  //   isModalOpen: isModalOpen
+  // });
   return (
     <div className="flex items-center px-4 pb-2">
       <div className="flex space-x-1 flex-1">
@@ -77,12 +86,16 @@ export function WorkflowTabs({
         )}
 
         {/* New Workflow Button */}
-        {workflows.length < maxWorkflows && (
+        {workflows.length < maxWorkflows ? (
           <button
             onClick={() => {
+              console.log('🚨 NEW WORKFLOW BUTTON CLICKED!');
+              console.log('onCreateWithModal available:', !!onCreateWithModal);
               if (onCreateWithModal) {
+                console.log('📂 Opening modal...');
                 setIsModalOpen(true);
               } else {
+                console.log('🔧 Using onCreateNew fallback...');
                 onCreateNew();
               }
             }}
@@ -91,19 +104,31 @@ export function WorkflowTabs({
             <Plus className="w-4 h-4" />
             <span className="text-sm">New Workflow</span>
           </button>
+        ) : (
+          <div className="text-xs text-red-500">
+            Button hidden: {workflows.length} {'>='} {maxWorkflows}
+          </div>
         )}
       </div>
 
       {/* Create Workflow Modal */}
-      {onCreateWithModal && (
+      {onCreateWithModal ? (
         <CreateWorkflowModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           onSubmit={(data: WorkflowFormData) => {
+            console.log('🚨 WORKFLOW TABS onSubmit CALLED!');
+            console.log('Tabs received data:', data);
+            console.log('Calling onCreateWithModal...');
             onCreateWithModal(data);
+            console.log('✅ onCreateWithModal called, closing modal...');
             setIsModalOpen(false);
           }}
         />
+      ) : (
+        <div className="text-xs text-red-500">
+          Modal not rendered: onCreateWithModal is {onCreateWithModal ? 'available' : 'missing'}
+        </div>
       )}
     </div>
   );

@@ -12,7 +12,7 @@ import { useEvolveAgentMutation } from '../../../../redux/api/evolveAgent/evolve
 import { WorkflowFormData } from '@/components/dashboard/CreateWorkflowModal';
 import { useDispatch, useSelector } from 'react-redux';
 import { addWorkflow, removeAllWorkflows, updateWorkflow, removeWorkflow, setWorkflows } from '@/redux/slice/workflowSlice';
-import { useGetDataCreatedByQuery } from '../../../../redux/api/autoOrchestrate/autoOrchestrateApi';
+import { useGetDataCreatedByQuery, useInstallDataMutation } from '../../../../redux/api/autoOrchestrate/autoOrchestrateApi';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
@@ -37,6 +37,7 @@ export default function WorkflowsPage() {
   const { workflows, workflowStatus, workflowError } = useSelector((state: any) => state.workflows);
   const currentUser = useSelector((state: any) => state.auth.user);
   
+  
   // Fetch workflows from API and load into Redux store
   const { 
     data: apiWorkflowData, 
@@ -50,6 +51,9 @@ export default function WorkflowsPage() {
   
   // Evolution API
   const [evolveAgent, { isLoading: isEvolving }] = useEvolveAgentMutation();
+  
+  // Install Data API for saving workflows
+  const [installData, { isLoading: isInstalling }] = useInstallDataMutation();
   
   // Memoize the callback to prevent infinite re-renders
   const handleAgentsProcessed = useCallback((processedAgents: Record<string, any>, processedConnections: any[], processedFinalData?: any) => {
@@ -85,6 +89,26 @@ export default function WorkflowsPage() {
   
   // Find the current workflow from the correct source - no default selection
   const actualCurrentWorkflow = displayWorkflows.find((w: any) => w.id === activeWorkflow) || null;
+  
+  // Debug: Monitor Redux workflows state changes
+  useEffect(() => {
+    console.log('🔍 REDUX WORKFLOWS CHANGED:', {
+      count: workflows.length,
+      workflows: workflows.map((w: any) => ({ id: w.id, name: w.name })),
+      activeWorkflow: activeWorkflow
+    });
+  }, [workflows, activeWorkflow]);
+
+  // Debug: Monitor display workflows and current workflow
+  useEffect(() => {
+    console.log('🔍 DISPLAY WORKFLOWS CHANGED:', {
+      reduxWorkflows: workflows.length,
+      managerWorkflows: workflowManagerWorkflows.length,
+      displayWorkflows: displayWorkflows.length,
+      activeWorkflow: activeWorkflow,
+      actualCurrentWorkflow: actualCurrentWorkflow?.name || 'null'
+    });
+  }, [workflows, workflowManagerWorkflows, displayWorkflows, activeWorkflow, actualCurrentWorkflow]);
   
   // Handle workflow selection from sidebar - replace current workflow entirely (SINGLE TAB MODE)
   const handleSidebarWorkflowSelect = useCallback(async (workflowId: string) => {
@@ -335,34 +359,166 @@ export default function WorkflowsPage() {
     setUndoStack(prev => [...prev, { ...action, timestamp: Date.now() }]);
   };
 
-  const handleWorkflowSubmit = (data: WorkflowFormData) => {
+  const handleWorkflowSubmit = async (data: WorkflowFormData) => {
+    console.log('🚨 HANDLE WORKFLOW SUBMIT CALLED!');
+    console.log('=== NEW WORKFLOW CREATION START ===');
     console.log('Creating workflow:', data);
+    console.log('Current active workflow:', activeWorkflow);
+    console.log('Current agents:', agents ? Object.keys(agents) : 'null');
     
-    // Create workflow data that matches the Workflow interface
-    const workflowData = {
-      id: Date.now().toString(),
-      name: data.name,
-      description: `${data.description} (Type: ${data.type})`,
-      status: 'draft' as const,
-      lastModified: 'Just now',
-      nodes: [],
-      connections: []
-    };
+    // STEP 1: CLEAR EXISTING (same as workflow selection for SINGLE TAB MODE)
+    console.log('🧹 CLEARING EXISTING WORKFLOW STATE...');
     
-    // Add to Redux store (don't remove existing workflows)
-    dispatch(addWorkflow(workflowData));
+    // Clear active workflow first
+    setActiveWorkflow(null);
     
-    // Set the new workflow as active
-    setActiveWorkflow(workflowData.id);
+    // Clear all canvas data
+    setAgents(null);
+    setConnections(null);
+    setFinalData(null);
+    setFinalizedResult(null);
     
-    // Add to undo stack
-    addToUndoStack({
-      type: 'CREATE_WORKFLOW',
-      description: `Created workflow "${data.name}"`,
-      data: { workflowId: workflowData.id, workflowData }
-    });
+    // Clear Redux workflows (SINGLE TAB MODE - only one workflow at a time)
+    dispatch(removeAllWorkflows());
     
-    toast.success('Workflow created successfully!');
+    // STEP 2: CREATE AND SAVE NEW WORKFLOW
+    console.log('🔄 CREATING AND SAVING NEW WORKFLOW...');
+    
+    try {
+      // Create workflow data for API
+      const workflowApiData = {
+        command: data.description,
+        type: data.type,
+        name: data.name,
+        nodes: [],
+        connections: []
+      };
+      
+      console.log('📡 Saving workflow to API...');
+      
+      const apiPayload = {
+        dataName: data.name,
+        description: data.description,
+        dataType: 'json',  // Use 'json' as it's an accepted dataType
+        dataContent: {
+          autoOrchestrateResult: workflowApiData
+        },
+        overwrite: true  // Allow overwriting existing workflows
+      };
+      
+      console.log('📤 API Payload:', apiPayload);
+      
+      // Save to backend API
+      const apiResponse = await installData(apiPayload).unwrap();
+      
+      console.log('✅ API Response:', apiResponse);
+      
+      // Create workflow data for Redux (matches the Workflow interface)
+      const workflowData = {
+        id: apiResponse.dataId || Date.now().toString(),
+        name: data.name,
+        description: `${data.description} (Type: ${data.type})`,
+        status: 'draft' as const,
+        lastModified: 'Just now',
+        nodes: [],
+        connections: []
+      };
+      
+      console.log('📝 Created new workflow:', workflowData.name);
+      console.log('🎯 Setting new workflow as active:', workflowData.id);
+      
+      // SINGLE TAB MODE: Set only this workflow in Redux store (replaces any existing)
+      dispatch(setWorkflows([workflowData]));
+      
+      // Set the new workflow as active
+      setActiveWorkflow(workflowData.id);
+      
+      // Set canvas to show empty state for new workflow
+      console.log('🎨 Setting canvas to show empty state for new workflow');
+      setAgents({}); // Empty object for empty workflow (will show empty state)
+      setConnections([]); // Empty array for connections
+      
+      console.log('🔍 IMMEDIATE STATE CHECK:');
+      console.log('- Dispatched setWorkflows with:', [workflowData]);
+      console.log('- Set activeWorkflow to:', workflowData.id);
+      console.log('- Set agents to empty object for empty state');
+      
+      // Add to undo stack
+      addToUndoStack({
+        type: 'CREATE_WORKFLOW',
+        description: `Created workflow "${data.name}"`,
+        data: { workflowId: workflowData.id, workflowData: workflowData }
+      });
+      
+      console.log('✅ NEW WORKFLOW CREATED AND SAVED SUCCESSFULLY');
+      console.log('=== NEW WORKFLOW CREATION END ===');
+      
+      toast.success(`New workflow created and saved: ${data.name}`, {
+        duration: 3000,
+        style: {
+          background: '#10B981',
+          color: '#fff',
+        },
+        iconTheme: {
+          primary: '#fff',
+          secondary: '#10B981',
+        },
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Error saving workflow:', error);
+      console.error('❌ Error details:', {
+        status: error?.status,
+        data: error?.data,
+        message: error?.message
+      });
+      
+      // Show more specific error message
+      const errorMessage = error?.data?.message || error?.message || 'Unknown error occurred';
+      toast.error(`Failed to create workflow: ${errorMessage}`);
+      
+      // For now, let's create a local workflow as fallback
+      console.log('🔄 Creating local workflow as fallback...');
+      
+      const fallbackWorkflowData = {
+        id: Date.now().toString(),
+        name: data.name,
+        description: `${data.description} (Type: ${data.type})`,
+        status: 'draft' as const,
+        lastModified: 'Just now',
+        nodes: [],
+        connections: []
+      };
+      
+      // SINGLE TAB MODE: Set only this workflow in Redux store (replaces any existing)
+      dispatch(setWorkflows([fallbackWorkflowData]));
+      
+      // Set the new workflow as active
+      setActiveWorkflow(fallbackWorkflowData.id);
+      
+      // Set canvas to show empty state for new workflow
+      console.log('🎨 Setting canvas to show empty state for fallback workflow');
+      setAgents({}); // Empty object for empty workflow (will show empty state)
+      setConnections([]); // Empty array for connections
+      
+      // Add to undo stack
+      addToUndoStack({
+        type: 'CREATE_WORKFLOW',
+        description: `Created local workflow "${data.name}"`,
+        data: { workflowId: fallbackWorkflowData.id, workflowData: fallbackWorkflowData }
+      });
+      
+      console.log('✅ LOCAL WORKFLOW CREATED AS FALLBACK');
+      toast.success(`Local workflow created: ${data.name} (API save failed)`, {
+        duration: 4000,
+        style: {
+          background: '#F59E0B',
+          color: '#fff',
+        },
+      });
+      
+      return;
+    }
   };
 
   const handleAgentFeedback = async (agentId: string, agentName: string, action?: string, feedback?: string | string[]) => {

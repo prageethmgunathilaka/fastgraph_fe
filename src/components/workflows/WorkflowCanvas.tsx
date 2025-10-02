@@ -7,6 +7,8 @@ import { LogSidebar } from "./LogSidebar";
 import { EndNodeSidebar } from "./EndNodeSidebar";
 import { FeedbackPopup } from "./FeedbackPopup";
 import { toast } from 'react-hot-toast';
+import { ExpandableCapabilities } from "./ExpandableCapabilities";
+import { CapabilityYamlEditor } from "./CapabilityYamlEditor";
 import {
   ReactFlow,
   applyNodeChanges,
@@ -111,8 +113,14 @@ function WorkflowCanvasInner({
   onAgentFeedback,
   finalData,
   finalizedResult,
+  finalizedArtifactLinks,
   executionResults,
 }: WorkflowCanvasProps) {
+  
+  console.log('🔍 WorkflowCanvas Debug:', {
+    finalizedArtifactLinksLength: finalizedArtifactLinks?.length,
+    finalizedArtifactLinks: finalizedArtifactLinks
+  });
   const [isMobile, setIsMobile] = useState(false);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -125,6 +133,8 @@ function WorkflowCanvasInner({
   const [sidebarWidth, setSidebarWidth] = useState<number>(450);
   const [showFeedbackPopup, setShowFeedbackPopup] = useState<boolean>(false);
   const [feedbackAgent, setFeedbackAgent] = useState<{ id: string; name: string } | null>(null);
+  const [showYamlEditor, setShowYamlEditor] = useState<boolean>(false);
+  const [yamlEditorCapability, setYamlEditorCapability] = useState<{ agentId: string; agentName: string; capability: any } | null>(null);
   const [showEndNodeSidebar, setShowEndNodeSidebar] = useState<boolean>(false);
   const [endNodeSidebarType, setEndNodeSidebarType] = useState<'output' | 'media'>('output');
   const [endNodeSidebarWidth, setEndNodeSidebarWidth] = useState<number>(400);
@@ -627,6 +637,16 @@ function WorkflowCanvasInner({
     setFeedbackAgent(null);
   }, []);
 
+  const handleShowYamlEditor = useCallback((agentId: string, agentName: string, capability: any) => {
+    setYamlEditorCapability({ agentId, agentName, capability });
+    setShowYamlEditor(true);
+  }, []);
+
+  const handleCloseYamlEditor = useCallback(() => {
+    setShowYamlEditor(false);
+    setYamlEditorCapability(null);
+  }, []);
+
   const handleSaveFeedback = useCallback(async (feedback: string) => {
     if (feedbackAgent && onAgentFeedback) {
       console.log('Saving feedback for agent:', feedbackAgent.id, feedback);
@@ -850,23 +870,23 @@ function WorkflowCanvasInner({
                 </div>
                 
                 {agent.capabilities && agent.capabilities.length > 0 && (
-                  <div className="space-y-2">
-                    <span className="theme-text-secondary font-medium block">Capabilities:</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {agent.capabilities.slice(0, 3).map((cap, idx) => (
-                        <span 
-                          key={idx}
-                          className="theme-input-bg theme-text-primary border theme-border px-2 py-1 rounded-md text-[10px] font-medium"
-                        >
-                          {cap}
-                        </span>
-                      ))}
-                      {agent.capabilities.length > 3 && (
-                        <span className="theme-text-muted text-[10px] self-center">
-                          +{agent.capabilities.length - 3} more
-                        </span>
-                      )}
+                  <div className="space-y-3 pt-3 border-t theme-border">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"></span>
+                      <span className="theme-text-secondary font-bold text-xs">Capabilities</span>
                     </div>
+                    
+                    <ExpandableCapabilities
+                      capabilities={agent.capabilities}
+                      maxVisible={3}
+                      showCategoryGroups={false}
+                      size="sm"
+                      className="max-w-xs"
+                      onEditCapability={(capability) => {
+                        const agentName = agents[hoveredNode.replace('agent-', '')]?.name || 'Agent';
+                        handleShowYamlEditor(hoveredNode, agentName, capability);
+                      }}
+                    />
                   </div>
                 )}
                 
@@ -1014,12 +1034,12 @@ function WorkflowCanvasInner({
             </div>
             <div className="theme-input-bg rounded-lg p-3 border theme-border">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-medium theme-text-secondary">Media Links:</span>
+                <span className="font-medium theme-text-secondary">Artifacts Links:</span>
                 <button 
                   onClick={handleGetMediaLinks}
                   className="px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
                 >
-                  Get Media Links
+                  Get Artifacts Links
                 </button>
               </div>
             </div>
@@ -1125,6 +1145,7 @@ function WorkflowCanvasInner({
         onClose={handleCloseEndNodeSidebar}
         sidebarType={endNodeSidebarType}
         finalData={finalizedResult || finalData}
+        finalizedArtifactLinks={finalizedArtifactLinks}
         initialWidth={endNodeSidebarWidth}
         onWidthChange={setEndNodeSidebarWidth}
       />
@@ -1138,6 +1159,17 @@ function WorkflowCanvasInner({
           agentName={feedbackAgent.name}
           onSave={handleSaveFeedback}
           onEvolve={handleEvolveFeedback}
+        />
+      )}
+
+      {/* YAML Editor Modal */}
+      {yamlEditorCapability && (
+        <CapabilityYamlEditor
+          isOpen={showYamlEditor}
+          onClose={handleCloseYamlEditor}
+          agentId={yamlEditorCapability.agentId}
+          agentName={yamlEditorCapability.agentName}
+          capability={yamlEditorCapability.capability}
         />
       )}
     </div>
